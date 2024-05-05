@@ -1,0 +1,476 @@
+## There's 2 styles of defining parameters for certain modules.
+# 1. We have a parameter called "model_type" which decides which model to use.
+#    The model_type is then used to select the correct model.
+#    The model_type is also used to select the correct model from a dictionary of model parameters, which is defined in the model_parameters.yml file.
+#    So in this case, you define e.g. 
+#         ray_loss_type: type_a, 
+#         ray_loss_parameters: 
+#           type_a: {parameter1: value1, parameter2: value2}  # type_a has to line up with ray_loss_type
+#           type_b: {WHATEVER: WHATEVER}  
+#           .... # anything else can be put here and will be ignored
+#
+# 2. We have a parameter called "model_type" which decides which model to use.
+#    The model_type is then used to select the correct model.
+#    The model parameters are not selected, but defined for each model type, so you have to comment out any other model parameters.
+#    So in this case, you define e.g. 
+#         ray_loss_type: type_a, 
+#         ray_loss_parameters: {parameter1: value1, parameter2: value2}
+#
+#    Note how the type_a is not there anymore, and the parameters for type_b are not allowed to be there
+#    
+# The reason for these different strategies is that it is quite nice to always have all the parameters for different types in in the file, 
+# even if they are not used, so that you can quickly switch between versions. This is the case for method 1. 
+# For method 2, you will always have to comment out the other parameters once you switch.
+# Or even delete them in general, but then it becomes a hassle to figuring out the correct parameters again if you want to switch back.
+# Method 1 is slightly less clean, as there are parameters (which are also saved to wandb) which don't do anything.
+#
+# In this file, method 2 is mostly used. 
+
+# We can resolve references using $
+
+
+general_params:
+  runs_per_number_of_obstacles_model_initial: 1
+  runs_per_number_of_obstacles_per_epoch_model: 1
+  plane_sweep_step_size: 50
+  spherebox_sweep_step_size: 100
+
+  logsamples_every_k_epochs: 10
+  
+requires_rollout_workers_after_setup: True
+blocks:
+  # See below for the block definitions of these blocks
+  #- $datatrain/general_blocks/planes_head
+  #- $datatrain/general_blocks/sphere_boxes_head
+  - $datatrain/general_blocks/model_initial_head_planes
+  - $datatrain/general_blocks/model_initial_head_spherebox
+  - $datatrain/general_blocks/model_head_planes
+  - $datatrain/general_blocks/model_head_spherebox
+
+  - name: concat_rollouts
+    type: Concat
+    inputs: 
+      - save_on_disk_planes_model_initial
+      - save_on_disk_spherebox_model_initial
+      - save_on_disk_planes_model
+      - save_on_disk_spherebox_model
+
+  - name: flatten_rollout
+    type: Flatten
+    inputs: 
+      - concat_rollouts
+    parameters: 
+      sequenced: True
+
+  #- name: concat_dense
+  #  type: Concat
+  #  inputs: 
+  #    - save_on_disk
+  #    - save_on_disk_sb
+
+  #- name: flatten_dense
+  #  type: Flatten
+  #  inputs: 
+  #    - concat_dense
+  #  parameters: 
+  #    sequenced: False
+
+  #- name: resampler_dense
+  #  type: Resampler
+  #  inputs: 
+  #    - flatten_dense
+  #  parameters:
+  #    count: 512000
+
+  - name: concat
+    type: Concat
+    inputs: 
+      - flatten_rollout
+      #- resampler_dense
+  
+  - name: shuffler
+    type: Shuffler
+    inputs: 
+      - concat
+
+  - name: length_bucketer
+    type: LengthBucketer
+    inputs: 
+      - shuffler
+    parameters:
+      bucket_size: 128
+
+  - name: output
+    type: Output
+    inputs: 
+      - length_bucketer
+
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+
+general_blocks: 
+  model_initial_head_spherebox:
+  - name: sweep_obstacles_spherebox_model_initial
+    type: Sweep
+    parameters:
+      sweep_variable_name: obstacle_groups/0/count
+      sweep_type: "steps"
+      sweep_type_params: 
+        start: 50
+        stop: 210
+        step: $datatrain/general_params/spherebox_sweep_step_size
+
+  - name: sweep_seed_spherebox_model_initial
+    type: Sweep
+    inputs: 
+      - sweep_obstacles_spherebox_model_initial
+    parameters: 
+      sweep_variable_name: seed
+      sweep_type: jumps  # "steps" or "values" or "jumps"
+      sweep_type_params: 
+        start: 0
+        jump_size: 1
+        num_jumps: $datatrain/general_params/runs_per_number_of_obstacles_model_initial
+  
+  - name: input_world_spherebox_model_initial
+    type: ProbabilisticWorld
+    inputs:
+      - sweep_seed_spherebox_model_initial
+    parameters: 
+      world_limits: [[-0.2, -0.2, -0.2], [10.2, 10.2, 10.2]]
+      voxel_size: $general/voxel_size
+      voxel_truncation_distance_vox: $general/truncation_distance_vox
+      start_goal_location_type: random_with_mindist
+      start_goal_location_type_params: 
+        min_dist: 7.0
+      start_goal_margin_to_obstacles: 0.5
+      seed: 0
+
+      obstacle_groups:
+        - name: box_spheres
+          group_type: weighted
+          count: 50
+          obstacles:
+            - obstacle_type: Box
+              dependent_variables:
+                length: NORMAL(2.0, 0.2)
+              length_x: DEPENDENT(length)
+              length_y: DEPENDENT(length)
+              length_z: DEPENDENT(length)
+
+            - obstacle_type: Sphere
+              radius: NORMAL(1.0, 0.2)
+
+
+  - name: sampler_spherebox_model_initial
+    type: LearnedRolloutSampler
+    inputs: 
+      - input_world_spherebox_model_initial
+    parameters:
+      terminate_if_stuck: False
+      stride: 1
+  
+  - name: save_on_disk_spherebox_model_initial
+    type: CacheOnDisk
+    inputs: 
+      - sampler_spherebox_model_initial
+    parameters:
+      cache_name: model_initial_spherebox_train_5msibfu3
+      store_permanently: True
+      chunk_size: 1
+      keep_in_memory: False
+
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+
+  model_initial_head_planes:
+  - name: sweep_obstacles_planes_model_initial
+    type: Sweep
+    parameters:
+      sweep_variable_name: obstacle_groups/0/count
+      sweep_type: "steps"
+      sweep_type_params: 
+        start: 25
+        stop: 105
+        step: $datatrain/general_params/plane_sweep_step_size
+
+  - name: sweep_seed_planes_model_initial
+    type: Sweep
+    inputs:
+      - sweep_obstacles_planes_model_initial
+    parameters: 
+      sweep_variable_name: seed
+      sweep_type: jumps  # "steps" or "values" or "jumps"
+      sweep_type_params: 
+        start: 0
+        jump_size: 1
+        num_jumps: $datatrain/general_params/runs_per_number_of_obstacles_model_initial
+  
+
+  - name: input_world_planes_model_initial
+    type: ProbabilisticWorld
+    inputs:
+      - sweep_seed_planes_model_initial
+    parameters: 
+      world_limits: [[-0.2, -0.2, -0.2], [10.2, 10.2, 10.2]]
+      voxel_size: $general/voxel_size
+      voxel_truncation_distance_vox: $general/truncation_distance_vox
+      start_goal_location_type: random_with_mindist
+      start_goal_location_type_params: 
+        min_dist: 7.0
+      start_goal_margin_to_obstacles: 0.5
+      seed: 0
+
+      obstacle_groups:
+      - name: planes
+        group_type: weighted
+        count: 100
+        obstacles: 
+          - obstacle_type: Box
+            length_x: $worlds/general_params/plane_thickness
+            length_y: $worlds/general_params/plane_world_distribution
+            length_z: $worlds/general_params/plane_world_distribution
+          - obstacle_type: Box
+            length_x: $worlds/general_params/plane_world_distribution
+            length_y: $worlds/general_params/plane_thickness
+            length_z: $worlds/general_params/plane_world_distribution
+          - obstacle_type: Box
+            length_x: $worlds/general_params/plane_world_distribution
+            length_y: $worlds/general_params/plane_world_distribution
+            length_z: $worlds/general_params/plane_thickness
+
+  - name: sampler_planes_model_initial
+    type: LearnedRolloutSampler
+    inputs: 
+      - input_world_planes_model_initial
+    parameters:
+      terminate_if_stuck: False
+      stride: 1
+  
+  - name: save_on_disk_planes_model_initial
+    type: CacheOnDisk
+    inputs: 
+      - sampler_planes_model_initial
+    parameters:
+      cache_name: model_initial_planes_train_5msibfu3
+      chunk_size: 1
+      store_permanently: True
+      keep_in_memory: False
+
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+
+  model_head_spherebox:
+  - name: sweep_obstacles_spherebox_model
+    type: Sweep
+    parameters:
+      sweep_variable_name: obstacle_groups/0/count
+      sweep_type: "steps"
+      sweep_type_params: 
+        start: 50
+        stop: 210
+        step: $datatrain/general_params/spherebox_sweep_step_size
+
+  - name: sweep_seed_spherebox_model
+    type: Sweep
+    inputs: 
+      - sweep_obstacles_spherebox_model
+    parameters: 
+      sweep_variable_name: seed
+      sweep_type: jumps  # "steps" or "values" or "jumps"
+      sweep_type_params: 
+        start: $datatrain/general_params/runs_per_number_of_obstacles_model_initial  # Otherwise we have overlapping seeds with the expert
+        jump_size: 1
+        num_jumps: $datatrain/general_params/runs_per_number_of_obstacles_per_epoch_model
+  
+
+  - name: input_world_spherebox_model
+    type: ProbabilisticWorld
+    inputs:
+      - sweep_seed_spherebox_model
+    parameters: 
+      world_limits: [[-0.2, -0.2, -0.2], [10.2, 10.2, 10.2]]
+      voxel_size: $general/voxel_size
+      voxel_truncation_distance_vox: $general/truncation_distance_vox
+      start_goal_location_type: random_with_mindist
+      start_goal_location_type_params: 
+        min_dist: 7.0
+      start_goal_margin_to_obstacles: 0.5
+      seed: 0
+
+      obstacle_groups:
+        - name: box_spheres
+          group_type: weighted
+          count: 50
+          obstacles:
+            - obstacle_type: Box
+              dependent_variables:
+                length: NORMAL(2.0, 0.2)
+              length_x: DEPENDENT(length)
+              length_y: DEPENDENT(length)
+              length_z: DEPENDENT(length)
+
+            - obstacle_type: Sphere
+              radius: NORMAL(1.0, 0.2)
+
+  - name: sampler_spherebox_model
+    type: LearnedRolloutSampler
+    inputs: 
+      - input_world_spherebox_model
+    parameters:
+      terminate_if_stuck: False
+      stride: 1
+  
+  - name: log_success_rates_spherebox_model
+    type: LogSuccessRatesWandb
+    inputs: 
+      - sampler_spherebox_model
+    parameters:
+      statistic_name: spherebox_model
+
+  - name: every_epoch_spherebox_model
+    type: EveryEpoch
+    inputs: 
+      - log_success_rates_spherebox_model
+    parameters:
+      every_k_epochs: 1
+      setup_before_training: False  # We have no model yet before training
+      aggregate: True
+
+  - name: save_on_disk_spherebox_model
+    type: CacheOnDisk
+    inputs: 
+      - every_epoch_spherebox_model
+    parameters:
+      keep_in_memory: False
+      cache_name: spherebox_model_temp
+      store_permanently: False
+      chunk_size: 1
+
+
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+
+  model_head_planes:
+  - name: sweep_obstacles_planes_model
+    type: Sweep
+    parameters:
+      sweep_variable_name: obstacle_groups/0/count
+      sweep_type: "steps"
+      sweep_type_params: 
+        start: 25
+        stop: 105
+        step: $datatrain/general_params/plane_sweep_step_size
+  
+  - name: sweep_seed_planes_model
+    type: Sweep
+    inputs: 
+      - sweep_obstacles_planes_model
+    parameters: 
+      sweep_variable_name: seed
+      sweep_type: jumps  # "steps" or "values" or "jumps"
+      sweep_type_params: 
+        start: $datatrain/general_params/runs_per_number_of_obstacles_model_initial  # Otherwise we have overlapping seeds with the expert
+        jump_size: 1
+        num_jumps: $datatrain/general_params/runs_per_number_of_obstacles_per_epoch_model
+  
+  - name: input_world_planes_model
+    type: ProbabilisticWorld
+    inputs:
+      - sweep_seed_planes_model
+    parameters: 
+      world_limits: [[-0.2, -0.2, -0.2], [10.2, 10.2, 10.2]]
+      voxel_size: $general/voxel_size
+      voxel_truncation_distance_vox: $general/truncation_distance_vox
+      start_goal_location_type: random_with_mindist
+      start_goal_location_type_params: 
+        min_dist: 7.0
+      start_goal_margin_to_obstacles: 0.5
+      seed: 0
+
+      obstacle_groups:
+      - name: planes
+        group_type: weighted
+        count: 100
+        obstacles: 
+          - obstacle_type: Box
+            length_x: $worlds/general_params/plane_thickness
+            length_y: $worlds/general_params/plane_world_distribution
+            length_z: $worlds/general_params/plane_world_distribution
+          - obstacle_type: Box
+            length_x: $worlds/general_params/plane_world_distribution
+            length_y: $worlds/general_params/plane_thickness
+            length_z: $worlds/general_params/plane_world_distribution
+          - obstacle_type: Box
+            length_x: $worlds/general_params/plane_world_distribution
+            length_y: $worlds/general_params/plane_world_distribution
+            length_z: $worlds/general_params/plane_thickness
+
+
+  - name: sampler_planes_model
+    type: LearnedRolloutSampler
+    inputs: 
+      - input_world_planes_model
+    parameters:
+      terminate_if_stuck: False
+      stride: 1
+
+  - name: log_success_rates_planes_model
+    type: LogSuccessRatesWandb
+    inputs: 
+      - sampler_planes_model
+    parameters:
+      statistic_name: planes_model
+  
+  - name: every_epoch_planes_model
+    type: EveryEpoch
+    inputs: 
+      - log_success_rates_planes_model
+    parameters:
+      every_k_epochs: 1
+      setup_before_training: False  # We have no model yet before training
+      aggregate: True
+  
+  - name: save_on_disk_planes_model
+    type: CacheOnDisk
+    inputs: 
+      - every_epoch_planes_model
+    parameters:
+      keep_in_memory: False
+      cache_name: planes_model_temp
+      store_permanently: False
+      chunk_size: 1
+
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+

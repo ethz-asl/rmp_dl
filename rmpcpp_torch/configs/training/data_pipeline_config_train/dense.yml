@@ -1,0 +1,245 @@
+## There's 2 styles of defining parameters for certain modules.
+# 1. We have a parameter called "model_type" which decides which model to use.
+#    The model_type is then used to select the correct model.
+#    The model_type is also used to select the correct model from a dictionary of model parameters, which is defined in the model_parameters.yml file.
+#    So in this case, you define e.g. 
+#         ray_loss_type: type_a, 
+#         ray_loss_parameters: 
+#           type_a: {parameter1: value1, parameter2: value2}  # type_a has to line up with ray_loss_type
+#           type_b: {WHATEVER: WHATEVER}  
+#           .... # anything else can be put here and will be ignored
+#
+# 2. We have a parameter called "model_type" which decides which model to use.
+#    The model_type is then used to select the correct model.
+#    The model parameters are not selected, but defined for each model type, so you have to comment out any other model parameters.
+#    So in this case, you define e.g. 
+#         ray_loss_type: type_a, 
+#         ray_loss_parameters: {parameter1: value1, parameter2: value2}
+#
+#    Note how the type_a is not there anymore, and the parameters for type_b are not allowed to be there
+#    
+# The reason for these different strategies is that it is quite nice to always have all the parameters for different types in in the file, 
+# even if they are not used, so that you can quickly switch between versions. This is the case for method 1. 
+# For method 2, you will always have to comment out the other parameters once you switch.
+# Or even delete them in general, but then it becomes a hassle to figuring out the correct parameters again if you want to switch back.
+# Method 1 is slightly less clean, as there are parameters (which are also saved to wandb) which don't do anything.
+#
+# In this file, method 2 is mostly used. 
+
+# We can resolve references using $
+
+
+general_params:
+  runs_per_number_of_obstacles_densely_sampled: 200
+
+  plane_sweep_step_size: 5
+  spherebox_sweep_step_size: 10
+
+requires_rollout_workers_after_setup: False
+blocks:
+  # See below for the block definitions of these blocks
+  - $datatrain/general_blocks/planes_head
+  - $datatrain/general_blocks/sphere_boxes_head
+
+  - name: concat_dense
+    type: Concat
+    inputs: 
+      - save_on_disk
+      - save_on_disk_sb
+
+  - name: flatten_dense
+    type: Flatten
+    inputs: 
+     - concat_dense
+    parameters: 
+      sequenced: False
+
+  - name: resampler_dense
+    type: Resampler
+    inputs: 
+      - flatten_dense
+    parameters:
+      count: 512000
+
+  - name: shuffler
+    type: Shuffler
+    inputs: 
+      - resampler_dense
+
+  - name: output
+    type: Output
+    inputs: 
+      - shuffler
+
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+
+general_blocks:
+  sphere_boxes_head:
+  - name: sweep_seed_sb
+    type: Sweep
+    parameters: 
+      sweep_variable_name: seed
+      sweep_type: jumps  # "steps" or "values" or "jumps"
+      sweep_type_params: 
+        start: 0
+        jump_size: 1
+        num_jumps: $datatrain/general_params/runs_per_number_of_obstacles_densely_sampled
+  
+  - name: sweep_obstacles_sb
+    type: Sweep
+    inputs:
+      - sweep_seed_sb
+    parameters:
+      sweep_variable_name: obstacle_groups/0/count
+      sweep_type: "steps"
+      sweep_type_params: 
+        start: 50
+        stop: 210
+        step: $datatrain/general_params/spherebox_sweep_step_size
+
+  - name: input_world_sb
+    type: ProbabilisticWorld
+    inputs: 
+      - sweep_obstacles_sb
+    parameters: 
+      world_limits: [[-0.2, -0.2, -0.2], [10.2, 10.2, 10.2]]
+      voxel_size: $general/voxel_size
+      voxel_truncation_distance_vox: $general/truncation_distance_vox
+      start_goal_location_type: single_random
+      start_goal_location_type_params: {}
+      start_goal_margin_to_obstacles: 0.5
+
+      seed: 0
+
+      obstacle_groups:
+        - name: box_spheres
+          group_type: weighted
+          count: 50
+          obstacles:
+            - obstacle_type: Box
+              dependent_variables:
+                length: NORMAL(2.0, 0.2)
+              length_x: DEPENDENT(length)
+              length_y: DEPENDENT(length)
+              length_z: DEPENDENT(length)
+
+            - obstacle_type: Sphere
+              radius: NORMAL(1.0, 0.2)
+
+  - name: sampler_sb
+    type: PositionSampler
+    inputs: 
+      - input_world_sb
+    parameters:
+      num_samples: 1024
+      sampler_type: uniform_sampler
+      sampler_params: {}
+      ray_observer_params: $general/policies/raycasting_dl
+      min_fraction_valid: 0.125
+      min_fraction_reachable: 0.9
+  
+  - name: save_on_disk_sb
+    type: CacheOnDisk
+    inputs: 
+      - sampler_sb
+    parameters:
+      keep_in_memory: True
+      cache_name: random_sphere_boxes_uniform_distribution_200r
+      store_permanently: True
+      chunk_size: 1
+
+  
+
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+####################################################################################################################################################
+
+
+  planes_head:
+  - name: sweep_seed
+    type: Sweep
+    parameters: 
+      sweep_variable_name: seed
+      sweep_type: jumps  # "steps" or "values" or "jumps"
+      sweep_type_params: 
+        start: 0
+        jump_size: 1
+        num_jumps: $datatrain/general_params/runs_per_number_of_obstacles_densely_sampled
+  
+  - name: sweep_obstacles
+    type: Sweep
+    inputs:
+      - sweep_seed
+    parameters:
+      sweep_variable_name: obstacle_groups/0/count
+      sweep_type: "steps"
+      sweep_type_params: 
+        start: 25
+        stop: 105
+        step: $datatrain/general_params/plane_sweep_step_size
+
+  - name: input_world
+    type: ProbabilisticWorld
+    inputs: 
+      - sweep_obstacles
+    parameters: 
+      world_limits: [[-0.2, -0.2, -0.2], [10.2, 10.2, 10.2]]
+      voxel_size: $general/voxel_size
+      voxel_truncation_distance_vox: $general/truncation_distance_vox
+      start_goal_location_type: single_random
+      start_goal_location_type_params: {}
+      start_goal_margin_to_obstacles: 0.5
+      seed: 0
+
+      obstacle_groups:
+      - name: boxes
+        group_type: weighted
+        count: 100
+        obstacles: 
+          - obstacle_type: Box
+            length_x: $worlds/general_params/plane_thickness
+            length_y: $worlds/general_params/plane_world_distribution
+            length_z: $worlds/general_params/plane_world_distribution
+          - obstacle_type: Box
+            length_x: $worlds/general_params/plane_world_distribution
+            length_y: $worlds/general_params/plane_thickness
+            length_z: $worlds/general_params/plane_world_distribution
+          - obstacle_type: Box
+            length_x: $worlds/general_params/plane_world_distribution
+            length_y: $worlds/general_params/plane_world_distribution
+            length_z: $worlds/general_params/plane_thickness
+
+  - name: sampler
+    type: PositionSampler
+    inputs: 
+      - input_world
+    parameters:
+      num_samples: 1024
+      sampler_type: uniform_sampler
+      sampler_params: {}
+      ray_observer_params: $general/policies/raycasting_dl
+      min_fraction_valid: 0.125
+      min_fraction_reachable: 0.9
+  
+  - name: save_on_disk
+    type: CacheOnDisk
+    inputs: 
+      - sampler
+    parameters:
+      keep_in_memory: True
+      cache_name: random_planes_uniform_distribution_200r
+      store_permanently: True
+      chunk_size: 1
+

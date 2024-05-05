@@ -1,0 +1,258 @@
+## There's 2 styles of defining parameters for certain modules.
+# 1. We have a parameter called "model_type" which decides which model to use.
+#    The model_type is then used to select the correct model.
+#    The model_type is also used to select the correct model from a dictionary of model parameters, which is defined in the model_parameters.yml file.
+#    So in this case, you define e.g. 
+#         ray_loss_type: type_a, 
+#         ray_loss_parameters: 
+#           type_a: {parameter1: value1, parameter2: value2}  # type_a has to line up with ray_loss_type
+#           type_b: {WHATEVER: WHATEVER}  
+#           .... # anything else can be put here and will be ignored
+#
+# 2. We have a parameter called "model_type" which decides which model to use.
+#    The model_type is then used to select the correct model.
+#    The model parameters are not selected, but defined for each model type, so you have to comment out any other model parameters.
+#    So in this case, you define e.g. 
+#         ray_loss_type: type_a, 
+#         ray_loss_parameters: {parameter1: value1, parameter2: value2}
+#
+#    Note how the type_a is not there anymore, and the parameters for type_b are not allowed to be there
+#    
+# The reason for these different strategies is that it is quite nice to always have all the parameters for different types in in the file, # even if they are not used, so that you can quickly switch between versions. This is the case for method 1. 
+# For method 2, you will always have to comment out the other parameters once you switch.  
+# Or even delete them in general, but then it becomes a hassle to figuring out the correct parameters again if you want to switch back.
+# Method 1 is slightly less clean, as there are parameters (which are also saved to wandb) which don't do anything.
+#
+# In this file, method 1 is mostly used
+version: 13
+
+epochs: 300
+gradient_clip: 0.2
+
+# Disables the gradient for the non-recurrent part of the model
+disable_grad_non_recurrent: False
+
+batch_size: 64
+
+# This basically just tries to load as many weights as possible from 
+# a previous wandb run. If the architecture is different, it will just skip the weights for that specific part of the model
+partial_pretraining:
+  active: False
+  wandb_id: 5msibfu3   # NEA wd0
+  #wandb_id: 9h5qabd2  
+  # wandb_id: whmaam44   # do 0.0
+  #wandb_id: uh1d6bnc  # do 0.1
+  #wandb_id: win3zrvq  # do 0.2
+  #wandb_id: wv20gt31  # do 0.4
+  version: latest
+  filters: 
+  # Because at these layers the dimensions are different, we have to filter it out
+  # Otherwise we get an error when loading the weights
+  regex_replace:
+  # Because we insert LSTMs (or identity networks if the LSTMs are disabled), the layer numbers are different
+    - ['(^model.output.combined.model.)10(.+)$', '\g<1>13\2'] # Replace 10 -> 13 in the combined network
+    - ['(^model.output.combined.model.)9(.+)$', '\g<1>12\2'] # Replace 9 -> 12 in the combined network
+    - ['(^model.output.combined.model.)7(.+)$', '\g<1>9\2'] # Replace 7 -> 9 in the combined network
+    - ['(^model.output.combined.model.)6(.+)$', '\g<1>8\2'] # Replace 6 -> 8 in the combined network
+    - ['(^model.output.combined.model.)4(.+)$', '\g<1>5\2'] # Replace 4 -> 5 in the combined network
+    - ['(^model.output.combined.model.)3(.+)$', '\g<1>4\2'] # Replace 3 -> 4 in the combined network
+
+    - ['(^model.output.combined.model.)(.+)$', '\1model.\2']  # Adds an extra .model in the combined network
+
+module_parameters:
+  # Parameters for the lightning module, which contains parameters such as weight decay which are only relevant during training
+  weight_decay: 0.000000000
+  learning_rate: 0.001
+  # These parameters are custom for recurrent models (such as the LSTM)
+  # If you put values there, they will overwrite the parameters defined above for those models
+  # So we can give LSTMs a higher weight decay for example
+  #custom_recurrent_optimizer_parameters:
+    #weight_decay: 0.00000001
+    # learning_rate: 0.001
+  
+  #truncated_bptt_steps: 100
+  
+  loss: 
+    # Depending on the decoder used, we get a cartesian output (x, y, z) or a ray output (distribution over 1024 rays). 
+    # Below we can select the loss for both cases
+    cartesian_loss_type: "cosine_similarity"  # cosine_similarity, mse, angular
+    cartesian_loss_parameters:
+        force_unit_norm: True
+    wandb_model_comparison_ids: 
+      - "5msibfu3"
+    # These losses are only relevant when the decoding type is ray_decoding_learned
+    ray_loss_type: "bce_with_logits"  # cross_entropy_new, bce_with_logits, mse
+    ray_loss_parameters: 
+      label_halton_encoding:
+        method: "max"  # max, dot
+        method_parameters: 
+          max: 
+            k: 1
+          dot: {}
+      ray_output_decoding:
+        - name: "max1"
+          method: "max"  # max
+          method_parameters: 
+            k: 1
+#        - name: "max10"
+#          method: "max"  # max
+#          method_parameters: 
+#            k: 10
+        - name: "max50"
+          method: "max"  # max
+          method_parameters: 
+            k: 50
+#        - name: "max100"
+#          method: "max"  # max
+#          method_parameters: 
+#            k: 100
+        - name: "max200"
+          method: "max"  # max
+          method_parameters: 
+            k: 200
+#        - name: "max500"
+#          method: "max"  # max
+#          method_parameters: 
+#            k: 500
+        - name: "max1024"
+          method: "max"  # max
+          method_parameters: 
+            k: 1024
+
+
+
+  model_params:
+  # Parameters of the actual model
+    disable_rays: False
+    norm_type: "layer_norm_no_elementwise_affine" # batch_norm, layer_norm, none, layer_norm_no_elementwise_affine
+    dropout: 0.0
+
+    maximum_ray_length: $general/policies/raycasting_dl/maximum_ray_length
+
+    # NOTE: The preloaded ray encoder and decoder below are only used for loading ray encoder/decoder weights from 
+    # the autoencoder project. This is generally not used anymore (Sep 2023). 
+    # The ray encoder and decoder are now generally trained first with a purely reactive model, (see partial pretraining above in this file)
+    # and then those preloaded weights are used to initialize the ray encoder and decoder of the recurrent model. 
+
+    # The main module loads the shared ray encoder, and passes it down to the raynetwork and statenetwork
+    # The shared ray encoder is used to encode the rays, and is shared between the raynetwork and statenetwork
+    # In the statenetwork it is used to encode the position and velocity to a latent state
+    # The statenetwork and raynetwork have parameters on their own deciding whether they
+    # contribute to the gradient of the shared ray encoder or not, making the option to freeze the weights of the shared ray encoder possible
+    # by setting the gradient of the shared ray encoder to False in the statenetwork and raynetwork
+    # The shared ray encoder can be initialized randomly or from a wandb run
+    # Note that the raynetwork and statenetwork can also be setup in such a way that they're not using the ray encoder at all
+    # depending on their parameters. 
+    shared_ray_encoder: 
+      encoder_initialization: "random"  # random: random initialization, wandb: load from wandb
+      encoder_initialization_params: 
+        random:  # only used if encoder_initialization == "random"
+          model_type: "fully_connected"
+          model_type_parameters:
+            fully_connected:
+              layer_sizes: [1024, 1024, 256, 128, 64]
+          disable_grad: $model/disable_grad_non_recurrent
+        wandb:  # only used if encoder_initialization == "wandb"
+          wandb_id: "d8y8mizd"  # d8y8mizd is with BN, s5zisypg is without BN
+          version: "latest"
+    
+    # This one is actually only used by 1 module (for now). Decided to put it here and have it loaded by the main module, 
+    # as I think it makes sense that the main module takes care of loading pretrained networks if necessary
+    shared_ray_decoder:
+      decoder_initialization: "random"  # random: random initialization, wandb: load from wandb
+      decoder_initialization_params: 
+        random:  # only used if encoder_initialization == "random"
+          model_type: "fully_connected"
+          model_type_parameters:
+            fully_connected:
+              layer_sizes: [256, 1024]
+            identity: {}  # Has no extra parameters
+          disable_grad: $model/disable_grad_non_recurrent
+        wandb:  # only used if encoder_initialization == "wandb"
+          wandb_id: "s5zisypg"  # d8y8mizd is with BN, s5zisypg is without BN
+          version: "latest"
+
+
+    raynetwork:
+      ray_normalization_method: "max"  # none, invert (= 1/(1+r)), max (=r/max), goal (=r/goal_dist), lin_sigm_robot_radius
+      disable_grad: $model/disable_grad_non_recurrent
+    
+    statenetwork:
+      disable_grad: $model/disable_grad_non_recurrent
+      model_type: "fully_connected"  # fully_connected, identity. When using ray_encoding_learned below, we probably want identity
+      model_type_parameters:
+        fully_connected:
+          layer_sizes: [32, 64]
+      state_encoding:
+        disable_velocity: True
+        encoding_type: "unit_vector_norm_separate"  # none, nerf_positional, ray_encoding_learned, unit_vector_norm_separate
+        encoding_type_parameters:
+          none:  # only used if encoding_type == "none"
+            {}
+          unit_vector_norm_separate:  # only used if encoding_type == "unit_vector_norm_separate"
+            {}
+          nerf_positional:  # only used if encoding_type == "nerf_positional"
+            L: 4
+          ray_encoding_learned: # only used if encoding_type == "ray_encoding_learned"
+            halton_encoding: 
+              method: "max"  # max, dot
+              method_parameters: 
+                max: 
+                  k: 1
+                dot: {}
+            disable_grad: $model/disable_grad_non_recurrent
+
+      rel_pos_normalization_method: "lin_sigm"  # none, sigmoid_like, unit_norm, max_ray, lin_sigm, lin_sigm_robot_radius
+      vel_normalization_method: "sigmoid_like"  # none, sigmoid_like, unit_norm, max_ray, lin_sigm
+
+
+    outputnetwork:
+      combined_network:
+        model_type: "fully_connected"  # fully_connected, recurrent
+        model_type_parameters:
+          fully_connected: # only used if model_type == "fully_connected"
+            layer_sizes: [256, 256, 256, 256]
+          recurrent: # only used if model_type == "recurrent"
+            disable_grad_non_recurrent: $model/disable_grad_non_recurrent
+            model_type: "fc_additive_lstm_matrix"  # fc_insert_lstm, fc_insert_skip_connection_lstm, fc_insert_skip_conection_additive_lstm, fc_additive_lstm_matrix
+            model_type_parameters:
+              fc_insert_lstm:
+                layer_sizes: [256, 256, 256, 256] # FC layers in which an lstm is inserted
+                # Insert an lstm at this position. 0 is before the first layer, 1 is between the first and second layer, etc.
+                # If len(layer_sizes) == n, the values allowed are 0, 1, ..., n, where 0 means before the first layer, and n means after the last layer
+                lstm_insertion_index: 2 
+                lstm_hidden_size: 256
+                lstm_depth: 1
+              fc_insert_skip_connection_lstm:
+                layer_sizes: [256, 256, 256, 256] # FC layers in which an lstm is inserted
+                # Insert an lstm at this position. 0 is before the first layer, 1 is between the first and second layer, etc.
+                # If len(layer_sizes) == n, the values allowed are 0, 1, ..., n, where 0 means before the first layer, and n means after the last layer
+                lstm_insertion_index: 2
+                lstm_hidden_size: 256
+              
+              fc_insert_skip_connection_additive_lstm:
+                layer_sizes: [256, 256, 256, 256] # FC layers in which an lstm is inserted
+                # Insert an lstm at this position. 0 is before the first layer, 1 is between the first and second layer, etc.
+                # If len(layer_sizes) == n, the values allowed are 0, 1, ..., n, where 0 means before the first layer, and n means after the last layer
+                lstm_insertion_index: 2
+                lstm_hidden_size: 256
+              fc_additive_lstm_matrix:
+                layer_sizes: [256, 256, 256, 256]
+                # We insert lstm's between the linear layers above
+                lstm_hidden_sizes: [256, 256, 256]
+                lstm_depths: [0, 1, 0]
+              fc_additive_gru_matrix:
+                layer_sizes: [256, 256, 256, 256]
+                # We insert lstm's between the linear layers above
+                gru_hidden_sizes: [256, 256, 256]
+                gru_depths: [0, 3, 0]
+
+          
+      decoder:
+        disable_grad: $model/disable_grad_non_recurrent
+        decoding_type: "ray_decoding_learned"  # ray_decoding_learned, cartesian
+        decoding_type_parameters:
+          ray_decoding_learned:  # only used if decoding_type == "ray_decoding_learned"
+          cartesian:   # Has no extra parameters
+            normalize_output: False
+

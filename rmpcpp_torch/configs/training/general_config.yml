@@ -1,0 +1,63 @@
+version: 5
+truncation_distance_vox: 4.0
+voxel_size: 0.2
+
+planner:
+  dt: 0.04
+  max_length: 1000
+  terminate_upon_goal_reached: True
+
+policies:
+  learned:
+    alpha: 10.0
+    beta: 15.0
+    c_softmax: 0.2
+    
+  target: 
+    alpha: 10.0
+    beta: 15.0
+    c_softmax: 0.2
+    metric: 1.0
+
+  raycasting_avoidance:
+    eta_rep: 88.0
+    eta_damp: 140.0
+    v_rep: 1.2
+    v_damp: 1.2
+    epsilon_damp: 0.1
+    c_softmax_obstacle: 0.2
+    r: 2.4
+    metric: True
+    N_sqrt: 32
+    max_steps: 100  # max steps taking when casting rays
+    surface_distance_epsilon_vox: 0.001
+    metric_scale: 1024.0
+    force_scale: 1.0
+  
+  raycasting_avoidance_geodesic:
+    eta_rep: 68.0
+    eta_damp: 160.0
+    v_rep: 1.0
+    v_damp: 1.4
+    epsilon_damp: 0.1
+    c_softmax_obstacle: 0.2
+    r: 2.4
+    metric: True
+    N_sqrt: 32
+    max_steps: 100  # max steps taking when casting rays
+    surface_distance_epsilon_vox: 0.001
+    metric_scale: 1024.0
+    force_scale: 1.0
+
+  raycasting_dl:
+    N_sqrt: 32
+    maximum_steps: 5000
+    maximum_ray_length: 10.0
+    surface_distance_epsilon_vox: 0.001
+    truncation_distance_vox: $general/truncation_distance_vox
+
+# These are used by some plotting code still. TODO: Refactor this out
+worldgen:
+  world_limits:
+    min: [-0.2, -0.2, -0.2]
+    max: [10.2, 10.2, 10.2]

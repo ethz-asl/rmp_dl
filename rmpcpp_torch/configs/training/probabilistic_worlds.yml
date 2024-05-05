@@ -1,0 +1,70 @@
+# Recommended to not change anything in this file. This is used as defaults in a lot of places in the code
+# and is referenced from other parameters files. If you want different worlds, define add them next to the already existing definitions
+general_params:
+  plane_world_distribution: NORMAL(3.0, 2.0)
+  plane_thickness: 0.3
+  pseudo25d_plane_length_distribution: UNIFORM(1, 4)
+
+
+sphere_box_world:
+  world_limits: [[-0.2, -0.2, -0.2], [10.2, 10.2, 10.2]]
+  voxel_size: $general/voxel_size
+  voxel_truncation_distance_vox: $general/truncation_distance_vox
+
+  obstacle_groups:
+    - name: box_spheres
+      group_type: weighted
+      count: 100
+      obstacles:
+        - obstacle_type: Box
+          dependent_variables:
+            length: NORMAL(2.0, 0.2)
+          length_x: DEPENDENT(length)
+          length_y: DEPENDENT(length)
+          length_z: DEPENDENT(length)
+
+        - obstacle_type: Sphere
+          radius: NORMAL(1.0, 0.2)
+
+plane_world:
+  world_limits: [[-0.2, -0.2, -0.2], [10.2, 10.2, 10.2]]
+  voxel_size: $general/voxel_size
+  voxel_truncation_distance_vox: $general/truncation_distance_vox
+
+  obstacle_groups:
+    - name: boxes
+      group_type: weighted
+      count: 50
+      obstacles: 
+        - obstacle_type: Box
+          length_x: $worlds/general_params/plane_thickness
+          length_y: $worlds/general_params/plane_world_distribution
+          length_z: $worlds/general_params/plane_world_distribution
+        - obstacle_type: Box
+          length_x: $worlds/general_params/plane_world_distribution
+          length_y: $worlds/general_params/plane_thickness
+          length_z: $worlds/general_params/plane_world_distribution
+        - obstacle_type: Box
+          length_x: $worlds/general_params/plane_world_distribution
+          length_y: $worlds/general_params/plane_world_distribution
+          length_z: $worlds/general_params/plane_thickness
+
+
+world25d:
+  world_limits: [[-0.2, -0.2, -0.2], [20.2, 5.2, 20.2]]
+  voxel_size: $general/voxel_size
+  voxel_truncation_distance_vox: $general/truncation_distance_vox
+
+  obstacle_groups:
+    - name: boxes
+      group_type: weighted
+      count: 20
+      obstacles: 
+        - obstacle_type: Box
+          length_x: $worlds/general_params/plane_thickness
+          length_y: 10.0
+          length_z: $worlds/general_params/pseudo25d_plane_length_distribution
+        - obstacle_type: Box
+          length_x: $worlds/general_params/pseudo25d_plane_length_distribution
+          length_y: 10.0
+          length_z: $worlds/general_params/plane_thickness

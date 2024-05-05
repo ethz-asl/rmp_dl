@@ -1,0 +1,5 @@
+*
+!/chomp/**
+!/single_world_tests
+!.gitignore
+!*.sh
