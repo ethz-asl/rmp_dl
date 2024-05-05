@@ -6,6 +6,7 @@ This repository is used to train and evaluate learned planners in 3d. The code i
 - The datapipeline is multiprocessed, so when setting num_workers > 0, it will spawn multiple copies across processes. The code for this has not been cleaned up yet properly, and also error handling is very bad. This means that exceptions in workers are often not properly caught and communicated, resulting in deadlocks during training if a worker were to fail. 
 - Python imports are not really done in a disciplined manner, and there are still quite some unused imports after refactoring, so there may be a bunch of depencies that you need for parts of the code that should not be necessary there. Will clean that up one day.
 - Extracting tarballs in the datapipeline can take forever. Should use a multithreaded tar version at some point
+- Not really an issue, but quite important to know this; during a default DAgger training run there will be almost 1000GB of data created on disk. If you start different runs that end up on the same cluster node, you will likely take up all local storage, and the sysadmin will probably get mad at you and kill your jobs. So keep that in mind, and try to run things on different nodes. 
 
 ## Most important things
 This project uses a lot of configuration files to set up networks, data pipelines, planner parameters, world definitions and a bunch of other things. These configuration files are located in the subfolders of the [configs](configs) directory. 
