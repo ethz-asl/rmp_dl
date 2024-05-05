@@ -45,7 +45,7 @@ cd src
 git clone git@github.com:ethz-asl/eigen_catkin.git
 git clone git@github.com:catkin/catkin_simple.git
 
-git clone -b isar/partial_rays git@github.com:ethz-asl/rmpcpp.git --recurse-submodules
+git clone git@github.com:ethz-asl/rmp_dl.git --recurse-submodules
 ```
 
 At this point we tell catkin where we installed nvblox. Follow their installation instructions [here](https://github.com/nvidia-isaac/nvblox) to set that up. **Note that we use nvblox version 0.0.4**; there are a few lines of code in the bindings that would require changes if using the newest version. The newest version also is not compatible with CUDA < 11.2.
@@ -178,7 +178,7 @@ We use pip catkin on the cluster as we can't install ROS.
 git clone git@github.com:ros/catkin.git
 git clone git@github.com:ethz-asl/eigen_catkin.git
 git clone git@github.com:catkin/catkin_simple.git
-TODO: git clone -b isar/partial_rays git@github.com:ethz-asl/rmpcpp.git --recurse-submodules
+TODO: git clone git@github.com:ethz-asl/rmp_dl.git --recurse-submodules
 
 pip install catkin-tools
 catkin init --workspace ../
