@@ -99,7 +99,7 @@ Source the setup script (change to .bash, .sh, .zsh depending on your shell). Re
 
 We go to the rmpcpp_torch directory, install the rmp_dl and comparison_planners packages as an editable package, and install some more dependencies with pip. If you installed different pytorch versions, make sure that the pytorch-lightning version is compatible here!
 ```bash
-cd rmpcpp/rmpcpp_torch
+cd rmp_dl/rmpcpp_torch
 pip install -e ./python
 pip install -e ./python/comparison_planners
 
@@ -214,7 +214,7 @@ Source the environment
 
 Install as editable package
 ```bash
-cd rmpcpp/rmpcpp_torch
+cd rmp_dl/rmpcpp_torch
 pip install -e ./python
 pip install -e ./python/comparison_planners
 
