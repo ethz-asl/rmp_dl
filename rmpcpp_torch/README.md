@@ -110,8 +110,9 @@ I'll give a short overview of some things are located.
 
 
 ## Running the 3D Visualization Scripts
+As mentioned above, note that the visualizations that use the randomly generated worlds show something else than visualized in the paper. This is because the code generating the random worlds has changed, and thus results in a different world for the same seed compared to an older version of the code. I don't see a clean way to fix this, other than including the full old version of the code. The scripts that use real worlds or custom worlds show the same thing as in the paper. The models used are the same, so you can play around with different randomly generated worlds yourself.
 
-These are located under [python/rmp_dl/vis3d/vis_scripts](python/rmp_dl/vis3d/vis_scripts). The 'simple' file just generates the 3d live visualization (the other file programmatically creates pngs with e.g. colorbars.). 
+The scripts are located under [python/rmp_dl/vis3d/vis_scripts](python/rmp_dl/vis3d/vis_scripts). The 'simple' file just generates the 3d live visualization (the other file programmatically creates pngs with e.g. colorbars.). 
 
 I'll explain the 2nd function, called `ffn_stuck_wall`:
 
