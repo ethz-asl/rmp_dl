@@ -115,15 +115,15 @@ find_package(roscpp QUIET)
 # Copies the binaries from the catkin devel folder to the ./build folder
 add_custom_target(build-time-make-directory ALL
         COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../src/rmpcpp/rmpcpp_planner/build/)
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/)
 add_custom_command(TARGET ${PROJECT_NAME}_runtest
         POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}_runtest>
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../src/rmpcpp/rmpcpp_planner/build/)
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/)
 add_custom_command(TARGET ${PROJECT_NAME}_single
         POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${PROJECT_NAME}_runtest>
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../src/rmpcpp/rmpcpp_planner/build/)
+        ${CMAKE_CURRENT_SOURCE_DIR}/build/)
 
 cs_install()
 cs_export(
